@@ -37,13 +37,37 @@ var collection;
 
 var main = bluebird.coroutine(function* () {
 	db = yield MongoClient.connect(mongoUri);
-	collection = db.collection('bench');
 
-	yield collection.drop();
-	yield collection.createIndex({ key: 1 }, { unique: true, w: 1 });
+	console.log('test - document key is objectid');
+	collection = db.collection('bench_id');
 
-	if (!opt.options.readOnly)
-		yield* stopwatch('write', testWrite);
+	if (!opt.options.readOnly) {
+		yield collection.drop();
+		yield collection.createIndex({ key: 1 }, { unique: true, w: 1 });
+
+		yield* stopwatch('write objectid', testWrite(function (key) {
+			var doc = { type: 'testdata', key: key };
+			return collection.insertOne(doc);
+		}));
+	}
+
+	yield* stopwatch('read index', testRead(function (key) {
+		var filter = { key: key };
+		return collection.findOne(filter);
+	}));
+
+	console.log('test - document key is string');
+	collection = db.collection('bench_key');
+
+	if (!opt.options.readOnly) {
+		yield collection.drop();
+		yield collection.createIndex({ key: 1 }, { unique: true, w: 1 });
+
+		yield* stopwatch('write key', testWrite(function (key) {
+			var doc = { _id: key, type: 'testdata', key: key };
+			return collection.insertOne(doc);
+		}));
+	}
 
 	yield* stopwatch('read doc', testRead(function (key) {
 		var filter = { _id: key };
@@ -71,40 +95,41 @@ function randomKey() {
 	return Math.floor(Math.random() * dataset).toString();
 }
 
-function* testWrite() {
+function testWrite(writeFunction) {
 
-	var stop = false;
-	
-	var func = function* (startIdx, endIdx) {
-		while (!stop) {
-			var key = (startIdx++).toString();
-			var doc = { _id: key, type: 'testdata', key: key };
-			yield collection.insertOne(doc);
-
-			if (startIdx >= endIdx)
-				break;
-		}
+	return function* () {
+		var stop = false;
 		
+		var func = function* (startIdx, endIdx) {
+			while (!stop) {
+				var key = (startIdx++).toString();
+				yield writeFunction(key);
+
+				if (startIdx >= endIdx)
+					break;
+			}
+			
+		}
+
+		var divideset = Math.ceil(dataset / concurrency);
+		var startIdx = 0;
+
+		var jobs = [];
+		for (var i = 0; i < concurrency; ++i) {
+			var endIdx = startIdx + divideset;
+			if (endIdx > dataset)
+				endIdx = dataset;
+
+			jobs.push(bluebird.coroutine(func)(startIdx, endIdx));
+
+			startIdx = endIdx;
+		}
+
+		setTimeout(function() { stop = true; }, time * 1000);
+		yield bluebird.all(jobs);
+
+		return dataset;
 	}
-
-	var divideset = Math.ceil(dataset / concurrency);
-	var startIdx = 0;
-
-	var jobs = [];
-	for (var i = 0; i < concurrency; ++i) {
-		var endIdx = startIdx + divideset;
-		if (endIdx > dataset)
-			endIdx = dataset;
-
-		jobs.push(bluebird.coroutine(func)(startIdx, endIdx));
-
-		startIdx = endIdx;
-	}
-
-	setTimeout(function() { stop = true; }, time * 1000);
-	yield bluebird.all(jobs);
-
-	return dataset;
 }
 
 function testRead(readFunction) {
