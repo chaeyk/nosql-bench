@@ -1,0 +1,15 @@
+{
+	"name": "nosql-bench",
+	"version": "0.0.1",
+	"description": "nosql benchmark",
+	"author": {
+		"name": "chaeyk",
+		"email": "chaeyk@gmail.com"
+	},
+	"dependencies": {
+		"bluebird": "^3.5.1",
+		"couchbase": "^2.4.1",
+		"mongodb": "^2.2.33",
+		"node-getopt": "^0.2.3"
+	}
+}
